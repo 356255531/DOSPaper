@@ -1,0 +1,63 @@
+%data : schedulingInterval set, schedulingIntervalMinusOne, schedulingIntervalMinusTwo set
+%data : gridPriceInEurCentPerkWh[schedulingInterval], biddingPriceInEurCentPerkWh[schedulingInterval], askingPriceInEurCentPerkWh[schedulingInterval]
+%data : generatedPowerInkW[schedulingInterval], consumedPowerInkW[schedulingInterval]
+%data : market2UserPowerInkW, user2MarketPowerInkW, penaltyCostInEurCentPerkWh
+%data : isInitiallyCharging, batteryCostInEurCent, batteryMaxPowerInkW, batteryMinEnergyInkWh, batteryMaxEnergyInkWh, batteryCurrEnergyInkWh
+%data : deltaT, maxGridPowerInkW
+%data : alpha, muSelf, lambdaCharge, lambdaDischarge
+
+variables:
+AskingPowerInkW[schedulingIntervalMinusOne]: real [0.0 .. maxGridPowerInkW];
+BiddingPowerInkW[schedulingIntervalMinusOne]: real [0.0 .. maxGridPowerInkW];
+ChargingPowerInkW[schedulingInterval] : real [0.0 .. batteryMaxPowerInkW];                                                 # Equ. 4
+DischargingPowerInkW[schedulingInterval]: real [0.0 .. batteryMaxPowerInkW];                                               # Equ. 4
+FromPowerInkW: real [0.0 .. maxGridPowerInkW];
+ToPowerInkW: real [0.0 .. maxGridPowerInkW];
+LoadEnergyInkWh[schedulingInterval]: real [0 .. batteryMaxEnergyInkWh];                                                    # Equ. 11a pot was less than batteryMaxLoadLevelInkWh !
+Xcharge[schedulingInterval]: binary;
+Xchange[schedulingInterval]: binary;
+Xaskbid[schedulingIntervalMinusOne]: binary; # additional binary to determine either bidding or asking - not both!
+Xfrom: binary;
+Xto: binary;
+
+objectives:
+
+deltaT * penaltyCostInEurCentPerkWh * (Xfrom * FromPowerInkW + Xto * ToPowerInkW)
++ deltaT * sum{s in schedulingIntervalMinusOne: (askingPriceInEurCentPerkWh[s] + gridPriceInEurCentPerkWh[s]) * AskingPowerInkW[s] - biddingPriceInEurCentPerkWh[s] * BiddingPowerInkW[s]}
++ batteryCostInEurCent * sum{t in schedulingInterval: Xchange[t]} -> min;
+
+constraints: # according to Sec. 3.4.4 (actual version)
+
+generatedPowerInkW[1] + market2UserPowerInkW + DischargingPowerInkW[1] + FromPowerInkW =                        # Equ. 1
+    consumedPowerInkW[1] + user2MarketPowerInkW + ChargingPowerInkW[1] +  ToPowerInkW;
+
+{t in schedulingIntervalMinusOne: generatedPowerInkW[t] + AskingPowerInkW[t] + DischargingPowerInkW[t] =                           # Equ. 2
+    consumedPowerInkW[t] + BiddingPowerInkW[t] + ChargingPowerInkW[t];}
+
+#ChargingPowerInkW[1] + ToPowerInkW <= batteryMaxPowerInkW;                                                      # Equ. 3
+
+#DischargingPowerInkW1] + FromPowerInkW <= batteryMaxPowerInkW;                                                 # Equ. 3
+
+{t in schedulingInterval: Xcharge[t] * DischargingPowerInkW[t] + (1 - Xcharge[t]) * ChargingPowerInkW[t] = 0;}             # Equ. 5
+
+{t in schedulingIntervalMinusOne: Xaskbid[t] * AskingPowerInkW[t] + (1 - Xaskbid[t]) * BiddingPowerInkW[t] = 0;}                   # Equ. 6
+
+LoadEnergyInkWh[1] = batteryCurrEnergyInkWh;                                                                    # Equ. 7
+{t in schedulingIntervalMinusOne: batteryMinEnergyInkWh <= LoadEnergyInkWh[t];}                                                    # Equ. 11b
+{t in schedulingIntervalMinusOne: LoadEnergyInkWh[t] <= batteryMaxEnergyInkWh;}                                                    # Equ. 11c
+
+{t in schedulingIntervalMinusOne: LoadEnergyInkWh[t] = (1.0 - deltaT * muSelf) * LoadEnergyInkWh[t-1]                              # Equ. 8
+    + deltaT * lambdaCharge * ChargingPowerInkW[t-1]
+    - deltaT * (1.0 / lambdaDischarge) * DischargingPowerInkW[t-1] ;}
+
+{t in schedulingIntervalMinusTwo: alpha * batteryMaxEnergyInkWh + (1.0 - alpha) * batteryMinEnergyInkWh <= LoadEnergyInkWh[t];}    # Equ. 12
+
+{t in schedulingIntervalMinusTwo: LoadEnergyInkWh[t] <= (1.0 - alpha) * batteryMaxEnergyInkWh + alpha * batteryMaxEnergyInkWh;}    # Equ. 13
+
+Xchange[1] = isInitiallyCharging + Xcharge[1] - 2 * isInitiallyCharging * Xcharge[1];                           # Equ. 14
+
+{t in schedulingIntervalMinusOne: Xchange[t] = Xcharge[t-1] + Xcharge[t] - 2 * Xcharge[t-1] * Xcharge[t];}                         # Equ. 15
+
+(1 - Xfrom) * FromPowerInkW = 0.0;                                                                              # Equ. 16
+
+(1 - Xto) * ToPowerInkW = 0.0;                                                                                  # Equ. 16
