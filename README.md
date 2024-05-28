@@ -1,4 +1,4 @@
-# Decentralized Optimal Scheduler for Prosumers in Local Energy Market
+# Open-source code for the paper Decentralized Optimal Scheduler for Prosumers in Local Energy Market
 
 ## Overview
 
